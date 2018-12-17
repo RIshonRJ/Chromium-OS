@@ -749,6 +749,10 @@ bool ReadExtentsToDiff(const string& old_part,
     puffdiff_allowed = false;
   }
 
+  // TODO(ahassani): This temporarily disables puffdiff until crbug.com/915559
+  // is fixed.
+  puffdiff_allowed = false;
+
   // Make copies of the extents so we can modify them.
   vector<Extent> src_extents = old_extents;
   vector<Extent> dst_extents = new_extents;
