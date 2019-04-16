@@ -23,7 +23,6 @@
 #include <utility>
 
 #include <base/files/file_util.h>
-#include <base/files/scoped_temp_dir.h>
 #include <base/logging.h>
 #include <base/strings/string_number_conversions.h>
 #include <base/strings/string_split.h>
@@ -37,8 +36,6 @@
 #include "update_engine/payload_generator/extent_utils.h"
 #include "update_engine/update_metadata.pb.h"
 
-using base::FilePath;
-using base::ScopedTempDir;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -51,8 +48,6 @@ namespace {
 constexpr size_t kSquashfsSuperBlockSize = 96;
 constexpr uint64_t kSquashfsCompressedBit = 1 << 24;
 constexpr uint32_t kSquashfsZlibCompression = 1;
-
-constexpr char kUpdateEngineConf[] = "etc/update_engine.conf";
 
 bool ReadSquashfsHeader(const brillo::Blob blob,
                         SquashfsFilesystem::SquashfsHeader* header) {
@@ -90,45 +85,6 @@ bool GetFileMapContent(const string& sqfs_path, string* map) {
     return false;
   }
   TEST_AND_RETURN_FALSE(utils::ReadFile(map_file, map));
-  return true;
-}
-
-bool GetUpdateEngineConfig(const std::string& sqfs_path, string* config) {
-  ScopedTempDir unsquash_dir;
-  if (!unsquash_dir.CreateUniqueTempDir()) {
-    PLOG(ERROR) << "Failed to create a temporary directory.";
-    return false;
-  }
-
-  // Run unsquashfs to extract update_engine.conf
-  // -f: To force overriding if the target directory exists.
-  // -d: The directory to unsquash the files.
-  vector<string> cmd = {"unsquashfs",
-                        "-f",
-                        "-d",
-                        unsquash_dir.GetPath().value(),
-                        sqfs_path,
-                        kUpdateEngineConf};
-  int exit_code;
-  if (!Subprocess::SynchronousExec(cmd, &exit_code, nullptr) ||
-      exit_code != 0) {
-    PLOG(ERROR) << "Failed to unsquashfs etc/update_engine.conf: ";
-    return false;
-  }
-
-  auto config_path = unsquash_dir.GetPath().Append(kUpdateEngineConf);
-  string config_content;
-  if (!utils::ReadFile(config_path.value(), &config_content)) {
-    PLOG(ERROR) << "Failed to read " << config_path.value();
-    return false;
-  }
-
-  if (config_content.empty()) {
-    LOG(ERROR) << "update_engine config file was empty!!";
-    return false;
-  }
-
-  *config = std::move(config_content);
   return true;
 }
 
@@ -283,12 +239,12 @@ bool SquashfsFilesystem::Init(const string& map,
 }
 
 unique_ptr<SquashfsFilesystem> SquashfsFilesystem::CreateFromFile(
-    const string& sqfs_path, bool extract_deflates, bool load_settings) {
+    const string& sqfs_path, bool extract_deflates) {
   if (sqfs_path.empty())
     return nullptr;
 
   brillo::StreamPtr sqfs_file =
-      brillo::FileStream::Open(FilePath(sqfs_path),
+      brillo::FileStream::Open(base::FilePath(sqfs_path),
                                brillo::Stream::AccessMode::READ,
                                brillo::FileStream::Disposition::OPEN_EXISTING,
                                nullptr);
@@ -320,12 +276,6 @@ unique_ptr<SquashfsFilesystem> SquashfsFilesystem::CreateFromFile(
           filemap, sqfs_path, sqfs_file->GetSize(), header, extract_deflates)) {
     LOG(ERROR) << "Failed to initialized the Squashfs file system";
     return nullptr;
-  }
-
-  if (load_settings) {
-    if (!GetUpdateEngineConfig(sqfs_path, &sqfs->update_engine_config_)) {
-      return nullptr;
-    }
   }
 
   return sqfs;
@@ -361,12 +311,9 @@ bool SquashfsFilesystem::GetFiles(vector<File>* files) const {
 }
 
 bool SquashfsFilesystem::LoadSettings(brillo::KeyValueStore* store) const {
-  if (!store->LoadFromString(update_engine_config_)) {
-    LOG(ERROR) << "Failed to load the settings with config: "
-               << update_engine_config_;
-    return false;
-  }
-  return true;
+  // Settings not supported in squashfs.
+  LOG(ERROR) << "squashfs doesn't support LoadSettings().";
+  return false;
 }
 
 bool SquashfsFilesystem::IsSquashfsImage(const brillo::Blob& blob) {
