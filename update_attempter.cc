@@ -1273,7 +1273,6 @@ bool UpdateAttempter::ResetStatus() {
 
     case UpdateStatus::UPDATED_NEED_REBOOT: {
       bool ret_value = true;
-      status_ = UpdateStatus::IDLE;
 
       // Remove the reboot marker so that if the machine is rebooted
       // after resetting to idle state, it doesn't go back to
@@ -1302,6 +1301,11 @@ bool UpdateAttempter::ResetStatus() {
       ret_value = prefs_->SetString(kPrefsPreviousVersion, "") && ret_value;
 
       LOG(INFO) << "Reset status " << (ret_value ? "successful" : "failed");
+
+      // Inform scheduler of new status.
+      SetStatusAndNotify(UpdateStatus::IDLE);
+      ScheduleUpdates();
+
       return ret_value;
     }
 
@@ -1635,9 +1639,7 @@ bool UpdateAttempter::GetBootTimeAtUpdate(Time* out_boot_time) {
 }
 
 bool UpdateAttempter::IsUpdateRunningOrScheduled() {
-  return ((status_ != UpdateStatus::IDLE &&
-           status_ != UpdateStatus::UPDATED_NEED_REBOOT) ||
-          waiting_for_scheduled_check_);
+  return (status_ != UpdateStatus::IDLE || waiting_for_scheduled_check_);
 }
 
 bool UpdateAttempter::IsAnyUpdateSourceAllowed() const {
